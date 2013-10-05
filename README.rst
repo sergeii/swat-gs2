@@ -28,7 +28,7 @@ Installation
 
    This is ought to free the +2 port (e.g. 10482) that has been occupied
    by the original GameSpy query listener.
-6. Append the following line anywhere in the section::
+6. Insert the following line anywhere in the section::
 
     ServerActors=GS2.Listener
 
@@ -92,16 +92,16 @@ Known issues
   The reason behind this is the API restrictions.
   Unlike the original library that has been written in C++,
   this one implements the UnrealEngine2 API.
-  Unfortunately the latter enforces some restrictions such as response size of a binary payload.
+  Unfortunately the latter enforces some restrictions such as size of a binary payload.
 
   To deal with this restriction the listener cuts as many players as it needs
   to fit into the limit and respond to a query.
 
   Reducing number of players that are included in a response is a intentional
   behaviour that is considered a "feature" rather than a bug!
-  While the other implementations of the custom GameSpy(v2) query listener libraries
-  implementing the UnrealEngine2 API (including the one that this work has derived from)
-  would ignore a query in a such a case, this implementation would simply adjust it's response.
+  While the other custom GameSpy(v2) query listener solutions
+  that implement UnrealEngine2 API (including the one that this work has derived from)
+  would ignore a query in a such a case, this solution would simply adjust it's response.
   Voilà!
 
 Acknowledgements
