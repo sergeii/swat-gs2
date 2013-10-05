@@ -1,8 +1,8 @@
 swat-gs2
 %%%%%%%%
 
-:Version:           1.0
-:Home page:         https://github.com/sergeii/swat-gs2/
+:Version:           1.0.1
+:Home page:         https://github.com/sergeii/swat-gs2
 :Author:            Sergei Khoroshilov <kh.sergei@gmail.com>
 :License:           BSD 3-Clause (http://opensource.org/licenses/BSD-3-Clause)
 :Based on:          A code snippet by "TR1GG3R" (http://pastebin.com/UiYCKXQp)
@@ -17,11 +17,24 @@ Installation
 
 1. Download the compiled binaries or compile the ``GS2`` package yourself.
 
-2. Copy contents of a package corresponding to the game version of your server
-   (either Vanilla or TSS) into the server's ``System`` directory.
+   A `release <https://github.com/sergeii/swat-gs2/releases>`_ is accompanied by two tar files both containing a **SWAT4 1.x** or a **SWAT4: The Stetchkov Syndicate** specific compiled package 
+   in the respective order::
+
+      swat-gs2.vX.Y.Z.content.tar.gz
+      swat-gs2.vX.Y.Z.contentexpansion.tar.gz
+
+   with `X.Y.Z` being the package version identifier.
+
+   Please check the `releases page <https://github.com/sergeii/swat-gs2/releases>`_ 
+   to get the latest compiled packages.
+
+2. Copy contents of a package corresponding to the game version of your 
+   server into the server's ``System`` directory.
 
 3. Open ``Swat4DedicatedServer.ini`` ``(Swat4XDedicatedServer.ini)``.
+
 4. Navigate to the ``[Engine.GameEngine]`` section.
+
 5. Comment out or remove completely the following line::
 
     ServerActors=IpDrv.MasterServerUplink
