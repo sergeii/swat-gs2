@@ -1,0 +1,6 @@
+*~
+*.py[co]
+*.geany
+bin/*
+dist/*
+*.html
