@@ -19,6 +19,13 @@ env.dist_extra = (
 )
 
 @task
+def mkrelease():
+    mkreadme()
+    version=prompt('Release version:', default=env.version).strip()
+    with settings(version=version):
+        mkdist()
+
+@task
 def mkreadme():
     with here():
         local('rst2html {} {}'.format('CHANGES.rst', 'CHANGES.html'))
@@ -45,6 +52,7 @@ def mkdist():
                     '.'.join(filename),
                     ' '.join(['-C {0.parent} {0.name}'.format(f) for f in contents])
                 ))
+
 
 @contextmanager
 def here():
