@@ -342,7 +342,7 @@ protected function array<byte> FetchPlayers(int Count)
     // Values
     foreach DynamicActors(class'PlayerController', PC)
     {
-        Values[0] = PC.PlayerReplicationInfo.PlayerName;
+        Values[0] = self.GetDecoratedString(PC.PlayerReplicationInfo.PlayerName);
         Values[1] = string(SwatPlayerReplicationInfo(PC.PlayerReplicationInfo).netScoreInfo.GetScore());
         Values[2] = string(self.GetPlayerPing(PC));
         // Append name, score and ping
