@@ -98,14 +98,6 @@ def system(kit):
         yield
 
 @task
-def mkrelease():
-    """Make a new package release."""
-    mkreadme()
-    version = prompt('Release version:', default=env.dist['version']).strip()
-    with settings(version=version):
-        mkdist()
-
-@task
 def mkreadme():
     """Generate README and CHANGES html files from their respective rst sources."""
     with here():
@@ -117,8 +109,8 @@ def mkdist():
     """Assemble a release dist package."""
     # create the dist directory 
     with quiet():
-        if not local('ls %s' % env.dist['packaged']):
-            local('mkdir -p %s' % env.dist['packaged'])
+        if not local('ls %s' % env.paths['dist']):
+            local('mkdir -p %s' % env.paths['dist'])
     # find compiled packages
     for (dirpath, dirnames, filenames) in os.walk(env.paths['bin']):
         for path in glob.glob(Path(dirpath).child('*.u')):
@@ -136,7 +128,7 @@ def mkdist():
                 filename.extend(['tar', 'gz'])
                 # tar the following files
                 contents = (path,) + env.dist['extra']
-                with lcd(env.dist['packaged']):
+                with lcd(env.paths['dist']):
                     local('tar -czf {} {} '.format(
                         '.'.join(filename),
                         ' '.join(['-C {0.parent} {0.name}'.format(f) for f in contents])
