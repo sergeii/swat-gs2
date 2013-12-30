@@ -79,37 +79,38 @@ public function PreBeginPlay()
     }
 }
 
+/**
+ * Initialize listener:
+ * - Check the environment (i.e. avoid being initialized on the Entry level startup)
+ * - Pick a UDP port to listen on
+ * - Attempt to listen on the port
+ * 
+ * @return  void
+ */
 public function BeginPlay()
 {
-    local int BoundPort;
-    //Avoid double init
-    if (Level.Game == None || SwatGameInfo(Level.Game) == None)
+    Super.BeginPlay();
+
+    if (Level.Game != None && SwatGameInfo(Level.Game) != None)
     {
-        return;
-    }
-    self.LinkMode = MODE_Binary;
-    //Listen on a +2 port if none specified
-    if (self.Port == 0)
-    {
-        self.Port = SwatGameInfo(Level.Game).GetServerPort() + 2;
-    }
-    //Bind the port (use next available if possible)
-    BoundPort = self.BindPort(self.Port, true);
-    //Port has been successfully bound - move on
-    if (BoundPort > 0)
-    {
-        log(self $ ": listening on " $ BoundPort);
-        //Update the Swat4DedicatedServer(X).ini config file
-        if (self.Port != BoundPort)
+        self.LinkMode = MODE_Binary;
+        // Listen on a +2 port if none specified
+        if (self.Port == 0)
         {
-            self.Port = BoundPort;
-            self.SaveConfig("", "", false, true);
-            self.FlushConfig();
+            self.Port = SwatGameInfo(Level.Game).GetServerPort() + 2;
         }
-        return;
+        // Port has been successfully bound - move on
+        if (self.BindPort(self.Port, false) > 0)
+        {
+            log(self $ " is listening on " $ self.Port);
+            return;
+        }
+        else
+        {
+            log(self $ " could not bind port (" $ self.Port $ ")");
+        }
     }
-    //Nah
-    log(self $ ": could not bind a port (" $ self.Port $ ")");
+    // Destroy the instance if none of the conditions above haven't been met
     self.Destroy();
 }
 
