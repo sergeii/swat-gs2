@@ -266,7 +266,7 @@ protected function array<byte> FetchMain()
     Keys[7] = "password";
     Keys[8] = "gamever";
 
-    Values[0] = ServerSettings(Level.CurrentServerSettings).ServerName;
+    Values[0] = self.GetDecoratedString(ServerSettings(Level.CurrentServerSettings).ServerName);
     Values[1] = string(SwatGameInfo(Level.Game).NumberOfPlayersForServerBrowser());
     Values[2] = string(ServerSettings(Level.CurrentServerSettings).MaxPlayers);
     Values[3] = SwatGameInfo(Level.Game).GetGameModeName();
@@ -418,6 +418,83 @@ protected function int GetPlayerPing(PlayerController PC)
     }
     // Note: gametracker considers a player with a ping of zero to be a bot, hence 1-9
     return RandRange(1, 9);
+}
+
+/**
+ * Decide whether the given string should be returned unchanged
+ * or with text codes such as [b], [u] and [c=xxxxxx] stripped off
+ * 
+ * @param   string Str
+ *          Original string
+ * @return  string
+ */
+protected function string GetDecoratedString(string Str)
+{
+    // Only strip text codes when the efficiency policy is on
+    if (self.Efficient)
+    {
+        return self.StripTextCodes(Str);
+    }
+    return Str;
+}
+
+/**
+ * Return a string with text decoration codes stripped off
+ * 
+ * @param   string Str
+ *          Potentially decorated text
+ * @return  string
+ */
+protected function string StripTextCodes(string Text)
+{
+    local string TextLower;
+    local int j;
+
+    // Search for the following patterns: 
+    // [cC=xxxxx], [bB], [uU], [\\bB], [\uU], [\cC]
+    // If one of these is found, then perform a subsitution and do another run
+    while (True)
+    {
+        TextLower = Lower(Text);
+        // Search for a "[c=""
+        j = InStr(TextLower, "[c=");
+        // and then the closing bracket "]"" with 6 characters between
+        if (j >= 0 && Mid(TextLower, j + 9, 1) == "]")
+        {
+            Text = Left(Text, j) $ Mid(Text, j + 10);
+        }
+        else if (InStr(TextLower, "[b]") >= 0)
+        {
+            ReplaceText(Text, "[b]", "");
+            ReplaceText(Text, "[B]", "");
+        }
+        else if (InStr(TextLower, "[\\b]") >= 0)
+        {
+            ReplaceText(Text, "[\\b]", "");
+            ReplaceText(Text, "[\\B]", "");
+        }
+        else if (InStr(TextLower, "[u]") >= 0)
+        {
+            ReplaceText(Text, "[u]", "");
+            ReplaceText(Text, "[U]", "");
+        }
+        else if (InStr(TextLower, "[\\u]") >= 0)
+        {
+            ReplaceText(Text, "[\\u]", "");
+            ReplaceText(Text, "[\\U]", "");
+        }
+        else if (InStr(TextLower, "[\\c]") >= 0)
+        {
+            ReplaceText(Text, "[\\c]", "");
+            ReplaceText(Text, "[\\C]", "");
+        }
+        else
+        {
+            break;
+        }
+        continue;
+    }
+    return Text;
 }
 
 defaultproperties
