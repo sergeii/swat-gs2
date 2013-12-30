@@ -36,6 +36,11 @@ class Listener extends IPDrv.UdpLink;
  */
 var protected array<byte> Data;
 
+/**
+ * Listener lock
+ * @type bool
+ */
+var protected bool bLocked;
 
 /**
  * Indicate whether the mod is enabled
@@ -110,11 +115,17 @@ public function BeginPlay()
 
 event ReceivedBinary(IpAddr Addr, int Count, byte B[255])
 {
+    // See if another request is being served right now
+    if (self.bLocked)
+    {
+        return;
+    }
     //Empty data sent with the previous response
     self.ResetData();
     //Check if this is a valid GameSpy V2 query request
     if (self.IsGameSpy2Query(B))
     {
+        self.bLocked = true;
         self.PrepareHeader(B);
         //Server information and rules
         if (B[23] == 0xFF)
@@ -128,6 +139,8 @@ event ReceivedBinary(IpAddr Addr, int Count, byte B[255])
         }
         //Respond
         self.SendData(Addr);
+        // Unlock the listener
+        self.bLocked = false;
     }
 }
 
