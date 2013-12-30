@@ -1,37 +1,36 @@
 swat-gs2
 %%%%%%%%
 
-:Version:           1.0.1
+:Version:           1.1.0-beta
 :Home page:         https://github.com/sergeii/swat-gs2
 :Author:            Sergei Khoroshilov <kh.sergei@gmail.com>
-:License:           BSD 3-Clause (http://opensource.org/licenses/BSD-3-Clause)
-:Based on:          A code snippet by "TR1GG3R" (http://pastebin.com/UiYCKXQp)
+:License:           `BSD 3-Clause <http://opensource.org/licenses/BSD-3-Clause>`_
+:Based on:          `GameSpy 2 Server Query <http://pastebin.com/UiYCKXQp>`_
 
 Description
 ===========
-This package is a replacement to the original SWAT4 GameSpy(v2) query listener library
-that has gone obsolete due to GameSpy SWAT4 support shutdown.
+This package provides an ability for a SWAT 4 server to respond to `Gamespy Protocol 2 <http://int64.org/docs/gamestat-protocols/gamespy2.html>`_ queries.
 
 Installation
 ============
 
-1. Download the compiled binaries or compile the ``GS2`` package yourself.
+1. `Download <https://github.com/sergeii/swat-gs2/releases>`_ compiled binaries or compile the ``GS2`` package yourself.
 
-   A `release <https://github.com/sergeii/swat-gs2/releases>`_ is accompanied by two tar files both containing a **SWAT4 1.x** or a **SWAT4: The Stetchkov Syndicate** specific compiled package 
-   in the respective order::
+   Every release is accompanied by two tar files, each containing a compiled package for a specific game version::
 
-      swat-gs2.vX.Y.Z.content.tar.gz
-      swat-gs2.vX.Y.Z.contentexpansion.tar.gz
+      swat-gs2.X.Y.Z.swat4.tar.gz
+      swat-gs2.X.Y.Z.swat4exp.tar.gz
 
-   with `X.Y.Z` being the package version identifier.
+   with `X.Y.Z` being the package version, followed by a game version identifier::
 
-   Please check the `releases page <https://github.com/sergeii/swat-gs2/releases>`_ 
-   to get the latest compiled packages.
+      swat4 - SWAT 4 1.0-1.1
+      swat4exp - SWAT 4: The Stetchkov Syndicate
 
-2. Copy contents of a package corresponding to the game version of your 
-   server into the server's ``System`` directory.
+   Please check the `releases page <https://github.com/sergeii/swat-gs2/releases>`_ to get the latest stable package version appropriate to your server game version.
 
-3. Open ``Swat4DedicatedServer.ini`` ``(Swat4XDedicatedServer.ini)``.
+2. Copy contents of a tar archive into the server's `System` directory.
+
+3. Open ``Swat4DedicatedServer.ini``
 
 4. Navigate to the ``[Engine.GameEngine]`` section.
 
@@ -39,35 +38,36 @@ Installation
 
     ServerActors=IpDrv.MasterServerUplink
 
-   This is ought to free the +2 port (e.g. 10482) that has been occupied
-   by the original GameSpy query listener.
+   This is ought to free the +2 port (e.g. 10482) that has been occupied by the native gamespy query listener.
+
 6. Insert the following line anywhere in the section::
 
     ServerActors=GS2.Listener
 
-7. Add the following section at the bottom of the ``Swat4DedicatedServer.ini``::
+7. Add the following section at the bottom of the file::
 
     [GS2.Listener]
     Enabled=True
 
-8.  The ``Swat4DedicatedServer.ini`` contents now should look like this::
+8. The ``Swat4DedicatedServer.ini`` contents should look like this now::
 
-        [Engine.GameEngine]
-        EnableDevTools=False
-        InitialMenuClass=SwatGui.SwatMainMenu
-        ...
-        ;ServerActors=IpDrv.MasterServerUplink
-        ServerActors=GS2.Listener
-        ...
+    [Engine.GameEngine]
+    EnableDevTools=False
+    InitialMenuClass=SwatGui.SwatMainMenu
+    ...
+    ;ServerActors=IpDrv.MasterServerUplink
+    ServerActors=GS2.Listener
+    ...
 
-        [GS2.Listener]
-        Enabled=True
+    [GS2.Listener]
+    Enabled=True
 
-9. Your server is now ready to listen to GameSpy v2 protocol queries on the +2 port (game port+2).
+9. | Your server is now ready to listen to gamespy protocol queries on a +2 port (join port+2).
+   | For instance, if your server's join port number was set with the default value (i.e. 10480), the query listen port would be 10482.
 
 Properties
 ==========
-The ``[GS2.Listener]`` section of ``Swat4DedicatedServer.ini`` supports the following properties:
+The ``[GS2.Listener]`` section of ``Swat4DedicatedServer.ini`` accepts the following properties:
 
 .. list-table::
    :widths: 15 40 10 10
@@ -75,49 +75,38 @@ The ``[GS2.Listener]`` section of ``Swat4DedicatedServer.ini`` supports the foll
 
    * - Property
      - Descripion
-     - Type
+     - Options
      - Default
    * - Enabled
-     - Toggles the listener on and off (requires a restart).
-     - Boolean
+     - Toggles listener on and off (requires a restart).
+     - True/False
      - False
    * - Port
-     - The port to listen on.
+     - Port number to listen on.
 
-       The default policy is to mimic behaviour of the original library that
-       binds the query port to the value of the game port incremented by 2.
-       You are free to set up a fixed value for the port to listen on.
-     - Integer (*1-65535*)
-     - game port+2
+       | By default, listener attempts to mimic behaviour of the native gamespy query listener that binds a port number equal to the join port number incremented by two.
+       | If you are willing to avoid this behaviour, please set an explicit port number.
+     - 1-65535
+     - Join Port+2
    * - Efficient
-     - Instruct the listener to follow the efficiency policy.
-
-       The current efficiency policy enforces player ping values
-       to be faked and reduced to a one byte digit.
-     - Boolean
+     - | Instruct listener to follow the efficiency policy.
+       | Please read more about this policy in the corresponding section below.
+     - True/False
      - False
 
-Known issues
-============
-+ The listener would not respond with a full list of players
-  if it's response payload size exceeded 255 bytes.
+Efficiency policy
+=================
+Listener would not respond to a query with full list of players if it's response payload size exceeded 255 bytes.
 
-  The reason behind this is the API restrictions.
-  Unlike the original library that has been written in C++,
-  this one implements the UnrealEngine2 API.
-  Unfortunately the latter enforces some restrictions such as size of a binary payload.
+The reason behind this is API restrictions. Unlike the native query listener that has been written in C++, listener form this package utilizes UnrealEngine2 API. Unfortunately the latter enforces some restrictions such as size of a udp response binary payload. In order to deal with such as a restriction, a response that would not initially fit into the limit, would be trimmed down removing as many players from the final output as it would need to.
 
-  To deal with this restriction the listener cuts as many players as it needs
-  to fit into the limit and respond to a query.
+A number of measures described as the *Efficiency policy* has been implemented to minimize response information loss:
 
-  Reducing number of players that are included in a response is a intentional
-  behaviour that is considered a "feature" rather than a bug!
-  While the other custom GameSpy(v2) query listener solutions
-  that implement UnrealEngine2 API (including the one that this work has derived from)
-  would ignore a query in a such a case, this solution would simply adjust it's response.
-  Voilà!
+* Player ping is replaced with a random one digit value.
+* Strings that may pottentially contain colour and other text-decoration codes are processed in order to strip those codes off.
+
+By default, this behaviour is disabled.
 
 Acknowledgements
 ================
-This project is a fork of the code snippet found elsewhere on the internet: (http://pastebin.com/UiYCKXQp).
-The original author is claimed to be "TR1GG3R" (http://www.houseofpain.tk/)
+This project is a fork of a code snippet found `elsewhere on the internet <http://pastebin.com/UiYCKXQp>`_ written by `TR1GG3R <http://www.houseofpain.tk/>`_.
