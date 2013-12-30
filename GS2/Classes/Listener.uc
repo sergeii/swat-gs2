@@ -579,3 +579,5 @@ defaultproperties
     Port=0;
     Efficient=false;
 }
+
+/* vim: set ft=java: */
