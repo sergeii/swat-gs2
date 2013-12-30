@@ -58,8 +58,15 @@ var config int Port;
  */
 var config bool Efficient;
 
+/**
+ * Check whether the mod is enabled
+ * 
+ * @return  void
+ */
 public function PreBeginPlay()
 {
+    Super.PreBeginPlay();
+
     if (!self.Enabled)
     {
         log(self $ " is disabled");
@@ -143,9 +150,15 @@ protected function SendData(IpAddr Addr)
     }
 }
 
-protected function bool IsGameSpy2Query(byte B[255])
+/**
+ * Tell whether the given byte array contains valid gamespy v2 specific tokens
+ * 
+ * @param   byte[255] Query
+ * @return  bool
+ */
+protected function bool IsGameSpy2Query(byte Query[255])
 {
-    if (B[16] == 0xFE && B[17] == 0xFD && B[18] == 0x00)
+    if (Query[16] == 0xFE && Query[17] == 0xFD && Query[18] == 0x00)
     {
         return true;
     }
@@ -319,6 +332,14 @@ protected function array<byte> FetchPlayerList(int NumPlayers)
     return bytePlayers;
 }
 
+/**
+ * Convert a string into a byte array sequence
+ * corresponding to its characters mapped to their respective
+ * latin-1 unicode subset code points
+ * 
+ * @param   string Str
+ * @return  array<byte>
+ */
 protected function array<byte> FetchString(coerce string Str)
 {
     local int i;
@@ -335,6 +356,11 @@ protected function array<byte> FetchString(coerce string Str)
     return byteString;
 }
 
+/**
+ * Return a null byte
+ * 
+ * @return  byte
+ */
 protected function byte FetchNull()
 {
     return 0x00;
@@ -363,13 +389,21 @@ protected function int GetArrayLength(array<byte> byteArray)
     return byteArray.Length;
 }
 
+/**
+ * Decide whether to return a real ping value corresponding 
+ * to the given PlayerController instance, or to fake it,
+ * in order to preserve space in a query response byte array 
+ * 
+ * @param   class'PlayerController' PC
+ * @return  int
+ */
 protected function int GetPlayerPing(PlayerController PC)
 {
     if (!self.Efficient)
     {
         return SwatPlayerReplicationInfo(PC.PlayerReplicationInfo).Ping;
     }
-    //Return a one byte random value (if we responded with 0 gametracker would think the player was a bot)
+    // Note: gametracker considers a player with a ping of zero to be a bot, hence 1-9
     return RandRange(1, 9);
 }
 
