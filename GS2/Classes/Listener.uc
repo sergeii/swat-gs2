@@ -30,11 +30,33 @@ class Listener extends IPDrv.UdpLink;
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+/**
+ * Response fragments
+ * @type array<byte>
+ */
 var protected array<byte> Data;
 
-var globalconfig bool Enabled;
-var globalconfig int Port;
-var globalconfig bool Efficient;
+
+/**
+ * Indicate whether the mod is enabled
+ * @default false
+ * @type bool
+ */
+var config bool Enabled;
+
+/**
+ * Explicit port number value
+ * @default Join Port + 2
+ * @type int
+ */
+var config int Port;
+
+/**
+ * Indicate whether the efficiency policy is on
+ * @default false
+ * @type bool
+ */
+var config bool Efficient;
 
 public function PreBeginPlay()
 {
