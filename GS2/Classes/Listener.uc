@@ -34,7 +34,7 @@ class Listener extends IPDrv.UdpLink;
  * Response fragments
  * @type array<byte>
  */
-var protected array<byte> Data;
+var protected array<byte> Response;
 
 /**
  * Listener lock
@@ -114,53 +114,71 @@ public function BeginPlay()
     self.Destroy();
 }
 
-event ReceivedBinary(IpAddr Addr, int Count, byte B[255])
+/**
+ * Respond to a query whenever a valid gamespy v2 request is received
+ * 
+ * @param   struct'IpAddr' Addr
+ *          Source address
+ * @param   Count
+ *          Number of bytes received
+ * @param   byte[255] Query
+ *          Received data
+ * @return  void
+ */
+event ReceivedBinary(IpAddr Addr, int Count, byte Query[255])
 {
     // See if another request is being served right now
     if (self.bLocked)
     {
         return;
     }
-    //Empty data sent with the previous response
-    self.ResetData();
-    //Check if this is a valid GameSpy V2 query request
-    if (self.IsGameSpy2Query(B))
+    // Check if this is a valid GameSpy V2 query
+    if (self.IsGameSpy2Query(Query))
     {
         self.bLocked = true;
-        self.PrepareHeader(B);
-        //Server information and rules
-        if (B[23] == 0xFF)
+        // Set header
+        self.StartResponse(Query);
+        // Server details
+        if (Query[23] == 0xFF)
         {
-            self.PrepareMain();
+            self.AddInfo();
         }
-        //Player information
-        if (B[24] == 0xFF)
+        // Player details
+        if (Query[24] == 0xFF)
         {
-            self.PreparePlayers();
+            self.AddPlayers();
         }
-        //Respond
-        self.SendData(Addr);
+        self.SendResponse(Addr);
         // Unlock the listener
         self.bLocked = false;
+        // Cleanup
+        self.EmptyResponse();
     }
 }
 
-protected function SendData(IpAddr Addr)
+/**
+ * Attempt to send data that has been populated prior to this method call
+ * 
+ * @param   struct'IPAddr' Addr
+ *          Destination address
+ * @return  void
+ */
+protected function SendResponse(IpAddr Addr)
 {
     local int i;
     local byte Packet[255];
-    //Only send data that could be fit into a 255 byte single packet
-    if (self.Data.Length > 0 && self.Data.Length <= 255)
+    // Only send response that could fit into a 255 byte packet
+    if (self.Response.Length > 0 && self.Response.Length <= 255)
     {
-        for (i = 0; i < self.Data.Length; i++)
+        for (i = 0; i < self.Response.Length; i++)
         {
-            Packet[i] = self.Data[i];
+            Packet[i] = self.Response[i];
         }
-        self.SendBinary(Addr, self.Data.Length, Packet);
+        self.SendBinary(Addr, self.Response.Length, Packet);
     }
     else
     {
-        log(self $ ": unable to send data of " $ self.Data.Length $ " bytes");
+        log(self $ " is unable to send data of " $ self.Response.Length $ " bytes");
     }
 }
 
@@ -179,83 +197,84 @@ protected function bool IsGameSpy2Query(byte Query[255])
     return false;
 }
 
-protected function AppendData(array<byte> byteArray)
+/**
+ * Populate the response byte sequence with a response header
+ * 
+ * @param   byte[255] Query
+ *          Original request query
+ * @return  void
+ */
+protected function StartResponse(byte Query[255])
 {
-    local int i;
-
-    for (i = 0; i < byteArray.Length; i++)
-    {
-        self.Data[self.Data.Length] = byteArray[i];
-    }
+    self.ExtendResponse(self.FetchResponseHeader(Query));
 }
 
-protected function ResetData()
+/**
+ * Populate the response byte sequence with server details
+ * 
+ * @return  void
+ */
+protected function AddInfo()
 {
-    self.Data.Remove(0, self.Data.Length);
+    self.ExtendResponse(self.FetchInfo());
 }
 
-protected function PrepareHeader(byte B[255])
-{
-    self.AppendData(FetchHeader(B));
-}
-
-protected function PrepareMain()
-{
-    self.AppendData(FetchMain());
-}
-
-protected function PreparePlayers()
+/**
+ * Attempt to add details of as many players as possible,
+ * considering the response size limit of 255 bytes
+ * 
+ * @return  void
+ */
+protected function AddPlayers()
 {
     local int n;
-    //Send a 255 byte max response at all cost, sacrificing players if needed
-    //Try it with the actual player count first
+    // Send a 255 byte max response at all cost, sacrificing players if needed
     n = SwatGameInfo(Level.Game).NumberOfPlayersForServerBrowser();
-    //Attempt to get rid of some players in order to fit into the 255 byte packet size limit
-    while ((Data.Length + self.GetArrayLength(FetchPlayerHeader(n)) + self.GetArrayLength(FetchPlayerList(n))) > 255)
+    // Attempt to get rid of some players in order to fit into the 255 byte limit
+    while (self.Response.Length + self.GetArrayLength(self.FetchPlayers(n)) > 255)
     {
-        //Prevent infinite loop
         if (n-- == 0)
         {
-            //Even with zero players we still can't be sure if we fit into the limit
-            //We would know about that in SendData() if we didn't
+            // Even with zero players we still can't be sure if we fit into the limit
+            // We would know about that in SendResponse() if we didn't
             break;
         }
     }
-    //Append header
-    self.PreparePlayerHeader(n);
-    //Append player list
-    self.PreparePlayerList(n);
+    self.ExtendResponse(self.FetchPlayers(n));
 }
 
-protected function PreparePlayerHeader(int NumPlayers)
+/**
+ * Return a byte sequence populated with a query response header 
+ * 
+ * @param   byte[255] Query
+ *          Original request query
+ * @return  array<byte>
+ */
+protected function array<byte> FetchResponseHeader(byte Query[255])
 {
-    self.AppendData(FetchPlayerHeader(NumPlayers));
-}
-
-protected function PreparePlayerList(int NumPlayers)
-{
-    self.AppendData(FetchPlayerList(NumPlayers));
-}
-
-protected function array<byte> FetchHeader(byte B[255])
-{
-    local array<byte> byteHeader;
+    local array<byte> Bytes;
     local int i;
-    //Delimiter
-    self.AppendByteToArray(FetchNull(), byteHeader);
-    //Unique identifier (4 bytes)
+    // Delimiter
+    self.AppendToBytes(self.FetchNull(), Bytes);
+    // Unique identifier
     for (i = 19; i < 23; i++)
     {
-        self.AppendByteToArray(B[i], byteHeader);
+        self.AppendToBytes(Query[i], Bytes);
     }
-    return byteHeader;
+    return Bytes;
 }
 
-protected function array<byte> FetchMain()
+/**
+ * Return a byte sequence populated 
+ * with a server information query response block
+ * 
+ * @return  array<byte>
+ */
+protected function array<byte> FetchInfo()
 {
     local int i;
     local array<string> Keys, Values;
-    local array<byte> byteMain;
+    local array<byte> Bytes;
 
     Keys[0] = "hostname";
     Keys[1] = "numplayers";
@@ -279,71 +298,88 @@ protected function array<byte> FetchMain()
 
     for (i = 0; i < Keys.Length; i++)
     {
-        //Key
-        self.AppendStringToArray(Keys[i], byteMain);
-        //Value
-        self.AppendStringToArray(Values[i], byteMain);
+        self.AppendStringToBytes(Keys[i], Bytes);
+        self.AppendStringToBytes(Values[i], Bytes);
     }
 
     //Empty key/value (end of key/value pairs)
-    self.AppendByteToArray(self.FetchNull(), byteMain);
-    self.AppendByteToArray(self.FetchNull(), byteMain);
+    self.AppendToBytes(self.FetchNull(), Bytes);
+    self.AppendToBytes(self.FetchNull(), Bytes);
 
-    return byteMain;
+    return Bytes;
 }
 
-protected function array<byte> FetchPlayerHeader(int NumPlayers)
+/**
+ * Return a byte array populated with a players query response block
+ * The number of players returned is limited by the given number
+ * 
+ * @param   int Count
+ *          Number of players to be returned
+ * @return  array<byte>
+ */
+protected function array<byte> FetchPlayers(int Count)
 {
-    local int i;
-    local array<string> Keys;
-    local array<byte> byteHeader;
+    local int i, n;
+    local array<string> Keys, Values;
+    local array<byte> Bytes;
+    local PlayerController PC;
 
     Keys[0] = "player_";
     Keys[1] = "score_";
     Keys[2] = "ping_";
-    //Empty string (end of player info description)
-    self.AppendByteToArray(FetchNull(), byteHeader);
-    //Player count
-    self.AppendByteToArray(NumPlayers, byteHeader);
-    //Player keys
+
+    // null at the beginning of header
+    self.AppendToBytes(self.FetchNull(), Bytes);
+    // Player count
+    self.AppendToBytes(Count, Bytes);
+    // Keys
     for (i = 0; i < Keys.Length; i++)
     {
-        self.AppendStringToArray(Keys[i], byteHeader);
+        self.AppendStringToBytes(Keys[i], Bytes);
     }
-    //Delimiter
-    self.AppendByteToArray(FetchNull(), byteHeader);
-
-    return byteHeader;
-}
-
-protected function array<byte> FetchPlayerList(int NumPlayers)
-{
-    local int i, n;
-    local array<string> Values;
-    local array<byte> bytePlayers;
-    local PlayerController PC;
-
+    // null at the end of header
+    self.AppendToBytes(self.FetchNull(), Bytes);
+    // Values
     foreach DynamicActors(class'PlayerController', PC)
     {
-        if (PC != None)
+        Values[0] = PC.PlayerReplicationInfo.PlayerName;
+        Values[1] = string(SwatPlayerReplicationInfo(PC.PlayerReplicationInfo).netScoreInfo.GetScore());
+        Values[2] = string(self.GetPlayerPing(PC));
+        // Append name, score and ping
+        for (i = 0; i < Values.Length; i++)
         {
-            Values[0] = PC.PlayerReplicationInfo.PlayerName;
-            Values[1] = string(SwatPlayerReplicationInfo(PC.PlayerReplicationInfo).netScoreInfo.GetScore());
-            Values[2] = string(GetPlayerPing(PC));
-            //Append name, score and ping
-            for (i = 0; i < Values.Length; i++)
-            {
-                self.AppendStringToArray(Values[i], bytePlayers);
-            }
-            //Player limit reached
-            if (++n >= NumPlayers)
-            {
-                break;
-            }
+            self.AppendStringToBytes(Values[i], Bytes);
+        }
+        // Player limit reached
+        if (++n >= Count)
+        {
+            break;
         }
     }
 
-    return bytePlayers;
+    return Bytes;
+}
+
+/**
+ * Push elements of the given byte array 
+ * to the end of the response byte sequence
+ * 
+ * @param   array<byte> Bytes
+ * @return  void
+ */
+protected function ExtendResponse(array<byte> Bytes)
+{
+    self.ExtendBytes(self.Response, Bytes);
+}
+
+/**
+ * Empty the response data
+ * 
+ * @return  void
+ */
+protected function EmptyResponse()
+{
+    self.Response.Remove(0, self.Response.Length);
 }
 
 /**
@@ -356,18 +392,25 @@ protected function array<byte> FetchPlayerList(int NumPlayers)
  */
 protected function array<byte> FetchString(coerce string Str)
 {
-    local int i;
-    local array<byte> byteString;
+    local int i, CodePoint;
+    local array<byte> Bytes;
 
     for (i = 0; i < Len(Str); i++)
     {
-        self.AppendByteToArray(Asc(Mid(Str, i, 1)), byteString);
+        CodePoint = Asc(Mid(Str, i, 1));
+        // Replace code points that dont fit into the latin-1 set
+        // with a question mark
+        if (CodePoint > 0xFF)
+        {
+            CodePoint = 0x3F;
+        }
+        self.AppendToBytes(CodePoint, Bytes);
     }
 
-    //Delimiter
-    self.AppendByteToArray(FetchNull(), byteString);
+    // Strings are null terminated
+    self.AppendToBytes(self.FetchNull(), Bytes);
 
-    return byteString;
+    return Bytes;
 }
 
 /**
@@ -380,27 +423,59 @@ protected function byte FetchNull()
     return 0x00;
 }
 
-protected function AppendStringToArray(coerce string Str, out array<byte> byteArray)
+/**
+ * Append a byte to the end of the given byte sequence
+ * 
+ * @param   byte Byte
+ * @param   array<byte> Bytes (out)
+ * @return  void
+ */
+protected function AppendToBytes(byte Byte, out array<byte> Bytes)
+{
+    Bytes[Bytes.Length] = Byte;
+}
+
+/**
+ * Merge two byte arrays with elements of one added on top of the other
+ *
+ * @param   array<byte> Dest (out)
+ *          Destination sequence
+ * @param   array<byte> Src
+ *          Source sequence
+ * @return  void
+ */
+protected function ExtendBytes(out array<byte> Dest, array<byte> Src)
 {
     local int i;
-    local array<byte> byteString;
 
-    byteString = FetchString(Str);
-
-    for (i = 0; i < byteString.Length; i++)
+    for (i = 0; i < Src.Length; i++)
     {
-        self.AppendByteToArray(byteString[i], byteArray);
+        self.AppendToBytes(Src[i], Dest);
     }
 }
 
-protected function AppendByteToArray(byte B, out array<byte> byteArray)
+/**
+ * Convert a string into a byte sequence and append
+ * elements of the latter to the given byte array
+ * 
+ * @param   string Str
+ * @param   array<byte> Bytes (out)
+ * @return  void
+ */
+protected function AppendStringToBytes(coerce string Str, out array<byte> Bytes)
 {
-    byteArray[byteArray.Length] = B;
+    self.ExtendBytes(Bytes, self.FetchString(Str));
 }
 
-protected function int GetArrayLength(array<byte> byteArray)
+/**
+ * Return value pf the given array's Length property
+ * 
+ * @param   array<byte> Bytes
+ * @return  int
+ */
+protected function int GetArrayLength(array<byte> Array)
 {
-    return byteArray.Length;
+    return Array.Length;
 }
 
 /**
