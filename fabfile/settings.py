@@ -2,7 +2,7 @@
 import os
 
 from unipath import Path
-from fabric.api import env
+from fabric.api import *
 
 
 env.kits = {
@@ -22,37 +22,40 @@ env.kits = {
 
 env.roledefs = {
     'ucc': ['vm-ubuntu-swat'],
-    'run': ['vm-ubuntu-swat'],
+    'server': ['vm-ubuntu-swat'],
 }
 
 env.paths = {
     'here': Path(os.path.dirname(__file__)).parent,
 }
-env.paths['dist'] = env.paths['here'].child('dist')
-env.paths['bin'] = env.paths['here'].child('bin')
-env.paths['deps'] = env.paths['here'].child('deps')
+env.paths.update({
+    'dist': env.paths['here'].child('dist'),
+    'compiled': env.paths['here'].child('compiled'),
+})
 
 env.ucc = {
-    'base': Path('/home/sergei/swat4ucc/'),
-    'revision': 'fff1f8d',
-    'compiler': None,
+    'path': Path('/home/sergei/swat4ucc/'),
+    'git': 'git@home:public/swat4#fff1f8d',
+    'packages': (
+        ('GS2', 'git@home:swat/swat-gs2#develop'),
+    ),
 }
 
-env.run = {
-    'base': Path('/home/sergei/swat4server/'),
-    'revision': 'b466151',
+env.server = {
+    'path': Path('/home/sergei/swat4server/'),
+    'git': 'git@home:public/swat4#b466151',
     'settings': {
         '+[Engine.GameEngine]': (
             'ServerActors=GS2.Listener',
         ),
         '[GS2.Listener]': (
             'Enabled=True',
+            'Efficient=True',
         ),
     }
 }
 
 env.dist = {
-    'name': 'GS2',
     'version': '1.1.0-beta',
     'extra': (
         env.paths['here'].child('LICENSE'),
