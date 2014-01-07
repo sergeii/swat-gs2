@@ -21,14 +21,14 @@ Installation
       swat-gs2.X.Y.Z.swat4.tar.gz
       swat-gs2.X.Y.Z.swat4exp.tar.gz
 
-   with `X.Y.Z` being the package version, followed by a game version identifier::
+   with *X.Y.Z* being the package version, followed by a game version identifier::
 
       swat4 - SWAT 4 1.0-1.1
       swat4exp - SWAT 4: The Stetchkov Syndicate
 
    Please check the `releases page <https://github.com/sergeii/swat-gs2/releases>`_ to get the latest stable package version appropriate to your server game version.
 
-2. Copy contents of a tar archive into the server's `System` directory.
+2. Copy contents of a tar archive into the server's ``System`` directory.
 
 3. Open ``Swat4DedicatedServer.ini``
 
