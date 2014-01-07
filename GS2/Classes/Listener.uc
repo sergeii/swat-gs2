@@ -1,7 +1,7 @@
 class Listener extends IPDrv.UdpLink;
 
  /**
- * Copyright (c) 2013, Sergei Khoroshilov
+ * Copyright (c) 2013-2014, Sergei Khoroshilov <kh.sergei@gmail.com>
  * All rights reserved.
  * 
  * Redistribution and use in source and binary forms, with or without modification,
