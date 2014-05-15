@@ -1,13 +1,77 @@
 class Listener extends IPDrv.UdpLink;
 
-var protected array<byte> Data;
+ /**
+ * Copyright (c) 2013-2014, Sergei Khoroshilov <kh.sergei@gmail.com>
+ * All rights reserved.
+ * 
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * 
+ *     1. Redistributions of source code must retain the above copyright notice,
+ *        this list of conditions and the following disclaimer.
+ * 
+ *     2. Redistributions in binary form must reproduce the above copyright notice,
+ *        this list of conditions and the following disclaimer in the documentation
+ *        and/or other materials provided with the distribution.
+ * 
+ *     3. Neither the name of the GS2 nor the names of its contributors may be used
+ *        to endorse or promote products derived from this software without
+ *        specific prior written permission.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ * ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 
-var globalconfig bool Enabled;
-var globalconfig int Port;
-var globalconfig bool Efficient;
+/**
+ * Response fragments
+ * @type array<byte>
+ */
+var protected array<byte> Response;
 
+/**
+ * Listener lock
+ * @type bool
+ */
+var protected bool bLocked;
+
+/**
+ * Indicate whether the mod is enabled
+ * @default false
+ * @type bool
+ */
+var config bool Enabled;
+
+/**
+ * Explicit port number value
+ * @default Join Port + 2
+ * @type int
+ */
+var config int Port;
+
+/**
+ * Indicate whether the efficiency policy is on
+ * @default false
+ * @type bool
+ */
+var config bool Efficient;
+
+/**
+ * Check whether the mod is enabled
+ * 
+ * @return  void
+ */
 public function PreBeginPlay()
 {
+    Super.PreBeginPlay();
+
     if (!self.Enabled)
     {
         log(self $ " is disabled");
@@ -15,168 +79,202 @@ public function PreBeginPlay()
     }
 }
 
+/**
+ * Initialize listener:
+ * - Check the environment (i.e. avoid being initialized on the Entry level startup)
+ * - Pick a UDP port to listen on
+ * - Attempt to listen on the port
+ * 
+ * @return  void
+ */
 public function BeginPlay()
 {
-    local int BoundPort;
-    //Avoid double init
-    if (Level.Game == None || SwatGameInfo(Level.Game) == None)
+    Super.BeginPlay();
+
+    if (Level.Game != None && SwatGameInfo(Level.Game) != None)
     {
-        return;
-    }
-    self.LinkMode = MODE_Binary;
-    //Listen on a +2 port if none specified
-    if (self.Port == 0)
-    {
-        self.Port = SwatGameInfo(Level.Game).GetServerPort() + 2;
-    }
-    //Bind the port (use next available if possible)
-    BoundPort = self.BindPort(self.Port, true);
-    //Port has been successfully bound - move on
-    if (BoundPort > 0)
-    {
-        log(self $ ": listening on " $ BoundPort);
-        //Update the Swat4DedicatedServer(X).ini config file
-        if (self.Port != BoundPort)
+        self.LinkMode = MODE_Binary;
+        // Listen on a +2 port if none specified
+        if (self.Port == 0)
         {
-            self.Port = BoundPort;
-            self.SaveConfig("", "", false, true);
-            self.FlushConfig();
+            self.Port = SwatGameInfo(Level.Game).GetServerPort() + 2;
         }
-        return;
+        // Port has been successfully bound - move on
+        if (self.BindPort(self.Port, false) > 0)
+        {
+            log(self $ " is listening on " $ self.Port);
+            return;
+        }
+        else
+        {
+            log(self $ " could not bind port (" $ self.Port $ ")");
+        }
     }
-    //Nah
-    log(self $ ": could not bind a port (" $ self.Port $ ")");
+    // Destroy the instance if none of the conditions above haven't been met
     self.Destroy();
 }
 
-event ReceivedBinary(IpAddr Addr, int Count, byte B[255])
+/**
+ * Respond to a query whenever a valid gamespy v2 request is received
+ * 
+ * @param   struct'IpAddr' Addr
+ *          Source address
+ * @param   Count
+ *          Number of bytes received
+ * @param   byte[255] Query
+ *          Received data
+ * @return  void
+ */
+event ReceivedBinary(IpAddr Addr, int Count, byte Query[255])
 {
-    //Empty data sent with the previous response
-    self.ResetData();
-    //Check if this is a valid GameSpy V2 query request
-    if (self.IsGameSpy2Query(B))
+    // See if another request is being served right now
+    if (self.bLocked)
     {
-        self.PrepareHeader(B);
-        //Server information and rules
-        if (B[23] == 0xFF)
+        return;
+    }
+    // Check if this is a valid GameSpy V2 query
+    if (self.IsGameSpy2Query(Query))
+    {
+        self.bLocked = true;
+        // Set header
+        self.StartResponse(Query);
+        // Server details
+        if (Query[23] == 0xFF)
         {
-            self.PrepareMain();
+            self.AddInfo();
         }
-        //Player information
-        if (B[24] == 0xFF)
+        // Player details
+        if (Query[24] == 0xFF)
         {
-            self.PreparePlayers();
+            self.AddPlayers();
         }
-        //Respond
-        self.SendData(Addr);
+        self.SendResponse(Addr);
+        // Unlock the listener
+        self.bLocked = false;
+        // Cleanup
+        self.EmptyResponse();
     }
 }
 
-protected function SendData(IpAddr Addr)
+/**
+ * Attempt to send data that has been populated prior to this method call
+ * 
+ * @param   struct'IPAddr' Addr
+ *          Destination address
+ * @return  void
+ */
+protected function SendResponse(IpAddr Addr)
 {
     local int i;
     local byte Packet[255];
-    //Only send data that could be fit into a 255 byte single packet
-    if (self.Data.Length > 0 && self.Data.Length <= 255)
+    // Only send response that could fit into a 255 byte packet
+    if (self.Response.Length > 0 && self.Response.Length <= 255)
     {
-        for (i = 0; i < self.Data.Length; i++)
+        for (i = 0; i < self.Response.Length; i++)
         {
-            Packet[i] = self.Data[i];
+            Packet[i] = self.Response[i];
         }
-        self.SendBinary(Addr, self.Data.Length, Packet);
+        self.SendBinary(Addr, self.Response.Length, Packet);
     }
     else
     {
-        log(self $ ": unable to send data of " $ self.Data.Length $ " bytes");
+        log(self $ " is unable to send data of " $ self.Response.Length $ " bytes");
     }
 }
 
-protected function bool IsGameSpy2Query(byte B[255])
+/**
+ * Tell whether the given byte array contains valid gamespy v2 specific tokens
+ * 
+ * @param   byte[255] Query
+ * @return  bool
+ */
+protected function bool IsGameSpy2Query(byte Query[255])
 {
-    if (B[16] == 0xFE && B[17] == 0xFD && B[18] == 0x00)
+    if (Query[16] == 0xFE && Query[17] == 0xFD && Query[18] == 0x00)
     {
         return true;
     }
     return false;
 }
 
-protected function AppendData(array<byte> byteArray)
+/**
+ * Populate the response byte sequence with a response header
+ * 
+ * @param   byte[255] Query
+ *          Original request query
+ * @return  void
+ */
+protected function StartResponse(byte Query[255])
 {
-    local int i;
-
-    for (i = 0; i < byteArray.Length; i++)
-    {
-        self.Data[self.Data.Length] = byteArray[i];
-    }
+    self.ExtendResponse(self.FetchResponseHeader(Query));
 }
 
-protected function ResetData()
+/**
+ * Populate the response byte sequence with server details
+ * 
+ * @return  void
+ */
+protected function AddInfo()
 {
-    self.Data.Remove(0, self.Data.Length);
+    self.ExtendResponse(self.FetchInfo());
 }
 
-protected function PrepareHeader(byte B[255])
-{
-    self.AppendData(FetchHeader(B));
-}
-
-protected function PrepareMain()
-{
-    self.AppendData(FetchMain());
-}
-
-protected function PreparePlayers()
+/**
+ * Attempt to add details of as many players as possible,
+ * considering the response size limit of 255 bytes
+ * 
+ * @return  void
+ */
+protected function AddPlayers()
 {
     local int n;
-    //Send a 255 byte max response at all cost, sacrificing players if needed
-    //Try it with the actual player count first
+    // Send a 255 byte max response at all cost, sacrificing players if needed
     n = SwatGameInfo(Level.Game).NumberOfPlayersForServerBrowser();
-    //Attempt to get rid of some players in order to fit into the 255 byte packet size limit
-    while ((Data.Length + self.GetArrayLength(FetchPlayerHeader(n)) + self.GetArrayLength(FetchPlayerList(n))) > 255)
+    // Attempt to get rid of some players in order to fit into the 255 byte limit
+    while (self.Response.Length + self.GetArrayLength(self.FetchPlayers(n)) > 255)
     {
-        //Prevent infinite loop
         if (n-- == 0)
         {
-            //Even with zero players we still can't be sure if we fit into the limit
-            //We would know about that in SendData() if we didn't
+            // Even with zero players we still can't be sure if we fit into the limit
+            // We would know about that in SendResponse() if we didn't
             break;
         }
     }
-    //Append header
-    self.PreparePlayerHeader(n);
-    //Append player list
-    self.PreparePlayerList(n);
+    self.ExtendResponse(self.FetchPlayers(n));
 }
 
-protected function PreparePlayerHeader(int NumPlayers)
+/**
+ * Return a byte sequence populated with a query response header 
+ * 
+ * @param   byte[255] Query
+ *          Original request query
+ * @return  array<byte>
+ */
+protected function array<byte> FetchResponseHeader(byte Query[255])
 {
-    self.AppendData(FetchPlayerHeader(NumPlayers));
-}
-
-protected function PreparePlayerList(int NumPlayers)
-{
-    self.AppendData(FetchPlayerList(NumPlayers));
-}
-
-protected function array<byte> FetchHeader(byte B[255])
-{
-    local array<byte> byteHeader;
+    local array<byte> Bytes;
     local int i;
-    //Delimiter
-    self.AppendByteToArray(FetchNull(), byteHeader);
-    //Unique identifier (4 bytes)
+    // Delimiter
+    self.AppendToBytes(self.FetchNull(), Bytes);
+    // Unique identifier
     for (i = 19; i < 23; i++)
     {
-        self.AppendByteToArray(B[i], byteHeader);
+        self.AppendToBytes(Query[i], Bytes);
     }
-    return byteHeader;
+    return Bytes;
 }
 
-protected function array<byte> FetchMain()
+/**
+ * Return a byte sequence populated 
+ * with a server information query response block
+ * 
+ * @return  array<byte>
+ */
+protected function array<byte> FetchInfo()
 {
     local int i;
     local array<string> Keys, Values;
-    local array<byte> byteMain;
+    local array<byte> Bytes;
 
     Keys[0] = "hostname";
     Keys[1] = "numplayers";
@@ -188,7 +286,7 @@ protected function array<byte> FetchMain()
     Keys[7] = "password";
     Keys[8] = "gamever";
 
-    Values[0] = ServerSettings(Level.CurrentServerSettings).ServerName;
+    Values[0] = self.GetDecoratedString(ServerSettings(Level.CurrentServerSettings).ServerName);
     Values[1] = string(SwatGameInfo(Level.Game).NumberOfPlayersForServerBrowser());
     Values[2] = string(ServerSettings(Level.CurrentServerSettings).MaxPlayers);
     Values[3] = SwatGameInfo(Level.Game).GetGameModeName();
@@ -200,125 +298,279 @@ protected function array<byte> FetchMain()
 
     for (i = 0; i < Keys.Length; i++)
     {
-        //Key
-        self.AppendStringToArray(Keys[i], byteMain);
-        //Value
-        self.AppendStringToArray(Values[i], byteMain);
+        self.AppendStringToBytes(Keys[i], Bytes);
+        self.AppendStringToBytes(Values[i], Bytes);
     }
 
     //Empty key/value (end of key/value pairs)
-    self.AppendByteToArray(self.FetchNull(), byteMain);
-    self.AppendByteToArray(self.FetchNull(), byteMain);
+    self.AppendToBytes(self.FetchNull(), Bytes);
+    self.AppendToBytes(self.FetchNull(), Bytes);
 
-    return byteMain;
+    return Bytes;
 }
 
-protected function array<byte> FetchPlayerHeader(int NumPlayers)
+/**
+ * Return a byte array populated with a players query response block
+ * The number of players returned is limited by the given number
+ * 
+ * @param   int Count
+ *          Number of players to be returned
+ * @return  array<byte>
+ */
+protected function array<byte> FetchPlayers(int Count)
 {
-    local int i;
-    local array<string> Keys;
-    local array<byte> byteHeader;
+    local int i, n;
+    local array<string> Keys, Values;
+    local array<byte> Bytes;
+    local PlayerController PC;
 
     Keys[0] = "player_";
     Keys[1] = "score_";
     Keys[2] = "ping_";
-    //Empty string (end of player info description)
-    self.AppendByteToArray(FetchNull(), byteHeader);
-    //Player count
-    self.AppendByteToArray(NumPlayers, byteHeader);
-    //Player keys
+
+    // null at the beginning of header
+    self.AppendToBytes(self.FetchNull(), Bytes);
+    // Player count
+    self.AppendToBytes(Count, Bytes);
+    // Keys
     for (i = 0; i < Keys.Length; i++)
     {
-        self.AppendStringToArray(Keys[i], byteHeader);
+        self.AppendStringToBytes(Keys[i], Bytes);
     }
-    //Delimiter
-    self.AppendByteToArray(FetchNull(), byteHeader);
-
-    return byteHeader;
-}
-
-protected function array<byte> FetchPlayerList(int NumPlayers)
-{
-    local int i, n;
-    local array<string> Values;
-    local array<byte> bytePlayers;
-    local PlayerController PC;
-
+    // null at the end of header
+    self.AppendToBytes(self.FetchNull(), Bytes);
+    // Values
     foreach DynamicActors(class'PlayerController', PC)
     {
-        if (PC != None)
+        Values[0] = self.GetDecoratedString(PC.PlayerReplicationInfo.PlayerName);
+        Values[1] = string(SwatPlayerReplicationInfo(PC.PlayerReplicationInfo).netScoreInfo.GetScore());
+        Values[2] = string(self.GetPlayerPing(PC));
+        // Append name, score and ping
+        for (i = 0; i < Values.Length; i++)
         {
-            Values[0] = PC.PlayerReplicationInfo.PlayerName;
-            Values[1] = string(SwatPlayerReplicationInfo(PC.PlayerReplicationInfo).netScoreInfo.GetScore());
-            Values[2] = string(GetPlayerPing(PC));
-            //Append name, score and ping
-            for (i = 0; i < Values.Length; i++)
-            {
-                self.AppendStringToArray(Values[i], bytePlayers);
-            }
-            //Player limit reached
-            if (++n >= NumPlayers)
-            {
-                break;
-            }
+            self.AppendStringToBytes(Values[i], Bytes);
+        }
+        // Player limit reached
+        if (++n >= Count)
+        {
+            break;
         }
     }
 
-    return bytePlayers;
+    return Bytes;
 }
 
+/**
+ * Push elements of the given byte array 
+ * to the end of the response byte sequence
+ * 
+ * @param   array<byte> Bytes
+ * @return  void
+ */
+protected function ExtendResponse(array<byte> Bytes)
+{
+    self.ExtendBytes(self.Response, Bytes);
+}
+
+/**
+ * Empty the response data
+ * 
+ * @return  void
+ */
+protected function EmptyResponse()
+{
+    self.Response.Remove(0, self.Response.Length);
+}
+
+/**
+ * Convert a string into a byte array sequence
+ * corresponding to its characters mapped to their respective
+ * latin-1 unicode subset code points
+ * 
+ * @param   string Str
+ * @return  array<byte>
+ */
 protected function array<byte> FetchString(coerce string Str)
 {
-    local int i;
-    local array<byte> byteString;
+    local int i, CodePoint;
+    local array<byte> Bytes;
 
     for (i = 0; i < Len(Str); i++)
     {
-        self.AppendByteToArray(Asc(Mid(Str, i, 1)), byteString);
+        CodePoint = Asc(Mid(Str, i, 1));
+        // Replace code points that dont fit into the latin-1 set
+        // with a question mark
+        if (CodePoint > 0xFF)
+        {
+            CodePoint = 0x3F;
+        }
+        self.AppendToBytes(CodePoint, Bytes);
     }
 
-    //Delimiter
-    self.AppendByteToArray(FetchNull(), byteString);
+    // Strings are null terminated
+    self.AppendToBytes(self.FetchNull(), Bytes);
 
-    return byteString;
+    return Bytes;
 }
 
+/**
+ * Return a null byte
+ * 
+ * @return  byte
+ */
 protected function byte FetchNull()
 {
     return 0x00;
 }
 
-protected function AppendStringToArray(coerce string Str, out array<byte> byteArray)
+/**
+ * Append a byte to the end of the given byte sequence
+ * 
+ * @param   byte Byte
+ * @param   array<byte> Bytes (out)
+ * @return  void
+ */
+protected function AppendToBytes(byte Byte, out array<byte> Bytes)
+{
+    Bytes[Bytes.Length] = Byte;
+}
+
+/**
+ * Merge two byte arrays with elements of one added on top of the other
+ *
+ * @param   array<byte> Dest (out)
+ *          Destination sequence
+ * @param   array<byte> Src
+ *          Source sequence
+ * @return  void
+ */
+protected function ExtendBytes(out array<byte> Dest, array<byte> Src)
 {
     local int i;
-    local array<byte> byteString;
 
-    byteString = FetchString(Str);
-
-    for (i = 0; i < byteString.Length; i++)
+    for (i = 0; i < Src.Length; i++)
     {
-        self.AppendByteToArray(byteString[i], byteArray);
+        self.AppendToBytes(Src[i], Dest);
     }
 }
 
-protected function AppendByteToArray(byte B, out array<byte> byteArray)
+/**
+ * Convert a string into a byte sequence and append
+ * elements of the latter to the given byte array
+ * 
+ * @param   string Str
+ * @param   array<byte> Bytes (out)
+ * @return  void
+ */
+protected function AppendStringToBytes(coerce string Str, out array<byte> Bytes)
 {
-    byteArray[byteArray.Length] = B;
+    self.ExtendBytes(Bytes, self.FetchString(Str));
 }
 
-protected function int GetArrayLength(array<byte> byteArray)
+/**
+ * Return value pf the given array's Length property
+ * 
+ * @param   array<byte> Bytes
+ * @return  int
+ */
+protected function int GetArrayLength(array<byte> Array)
 {
-    return byteArray.Length;
+    return Array.Length;
 }
 
+/**
+ * Decide whether to return a real ping value corresponding 
+ * to the given PlayerController instance, or to fake it,
+ * in order to preserve space in a query response byte array 
+ * 
+ * @param   class'PlayerController' PC
+ * @return  int
+ */
 protected function int GetPlayerPing(PlayerController PC)
 {
     if (!self.Efficient)
     {
         return SwatPlayerReplicationInfo(PC.PlayerReplicationInfo).Ping;
     }
-    //Return a one byte random value (if we responded with 0 gametracker would think the player was a bot)
+    // Note: gametracker considers a player with a ping of zero to be a bot, hence 1-9
     return RandRange(1, 9);
+}
+
+/**
+ * Decide whether the given string should be returned unchanged
+ * or with text codes such as [b], [u] and [c=xxxxxx] stripped off
+ * 
+ * @param   string Str
+ *          Original string
+ * @return  string
+ */
+protected function string GetDecoratedString(string Str)
+{
+    // Only strip text codes when the efficiency policy is on
+    if (self.Efficient)
+    {
+        return self.StripTextCodes(Str);
+    }
+    return Str;
+}
+
+/**
+ * Return a string with text decoration codes stripped off
+ * 
+ * @param   string Str
+ *          Potentially decorated text
+ * @return  string
+ */
+protected function string StripTextCodes(string Text)
+{
+    local string TextLower;
+    local int j;
+
+    // Search for the following patterns: 
+    // [cC=xxxxx], [bB], [uU], [\\bB], [\uU], [\cC]
+    // If one of these is found, then perform a subsitution and do another run
+    while (True)
+    {
+        TextLower = Lower(Text);
+        // Search for a "[c=""
+        j = InStr(TextLower, "[c=");
+        // and then the closing bracket "]"" with 6 characters between
+        if (j >= 0 && Mid(TextLower, j + 9, 1) == "]")
+        {
+            Text = Left(Text, j) $ Mid(Text, j + 10);
+        }
+        else if (InStr(TextLower, "[b]") >= 0)
+        {
+            ReplaceText(Text, "[b]", "");
+            ReplaceText(Text, "[B]", "");
+        }
+        else if (InStr(TextLower, "[\\b]") >= 0)
+        {
+            ReplaceText(Text, "[\\b]", "");
+            ReplaceText(Text, "[\\B]", "");
+        }
+        else if (InStr(TextLower, "[u]") >= 0)
+        {
+            ReplaceText(Text, "[u]", "");
+            ReplaceText(Text, "[U]", "");
+        }
+        else if (InStr(TextLower, "[\\u]") >= 0)
+        {
+            ReplaceText(Text, "[\\u]", "");
+            ReplaceText(Text, "[\\U]", "");
+        }
+        else if (InStr(TextLower, "[\\c]") >= 0)
+        {
+            ReplaceText(Text, "[\\c]", "");
+            ReplaceText(Text, "[\\C]", "");
+        }
+        else
+        {
+            break;
+        }
+        continue;
+    }
+    return Text;
 }
 
 defaultproperties
@@ -327,3 +579,5 @@ defaultproperties
     Port=0;
     Efficient=false;
 }
+
+/* vim: set ft=java: */
