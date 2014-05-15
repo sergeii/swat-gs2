@@ -84,12 +84,14 @@ def checkout(remote, local):
     if not exists(local):
         git('clone {} {}'.format(path, local))
     with cd(local):
+        rev = revision if revision else 'origin/master'
         git('fetch origin')
-        git('reset --hard {}'.format(revision if revision else 'origin/master'))
+        git('checkout --force {}'.format(rev))
+        git('reset --hard {}'.format(rev))  # --mixed?
         git('clean -fdx')
 
 def tmp():
-    """Return random generated path for a /tmp file/directory child."""
+    """Return a Path instance for a random generated /tmp file/directory child."""
     return Path('/tmp').child(str(uuid.uuid4()))
 
 @contextmanager

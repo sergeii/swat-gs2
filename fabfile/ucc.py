@@ -59,6 +59,7 @@ def retrieve():
     """Retrieve compiled packages."""
     # retrieve compiled package from a mod's System directory
     with quiet():
+        local('rm -rf {}'.format(env.paths['compiled']))
         for kit, opts in env.kits.items():
             for package, _ in env.ucc['packages']:
                 package = '{}.u'.format(package)

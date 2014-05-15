@@ -20,8 +20,8 @@ def release():
     """Assemble a release dist package."""
     # create the dist directory 
     with quiet():
-        if not local('ls %s' % env.paths['dist']):
-            local('mkdir -p %s' % env.paths['dist'])
+        local('rm -rf {}'.format(env.paths['dist']))
+        local('mkdir -p {}'.format(env.paths['dist']))
         # find compiled packages
         for (dirpath, dirnames, filenames) in os.walk(env.paths['compiled']):
             files = []

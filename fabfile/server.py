@@ -9,6 +9,14 @@ _kits = env.kits.keys()
 
 @task
 @roles('server')
+def all():
+    """Set up the compiled packages on a clean server, then launch it."""
+    setup()
+    install()
+    launch()
+
+@task
+@roles('server')
 def setup():
     """Set up a SWAT 4 test server."""
     checkout(env.server['git'], env.server['path'])
