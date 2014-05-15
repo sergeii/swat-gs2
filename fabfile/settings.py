@@ -35,15 +35,15 @@ env.paths.update({
 
 env.ucc = {
     'path': Path('/home/sergei/swat4ucc/'),
-    'git': 'git@home:public/swat4#fff1f8d',
+    'git': 'git@home:public/swat4#origin/ucc',
     'packages': (
-        ('GS2', 'git@home:swat/swat-gs2#develop'),
+        ('GS2', 'git@home:swat/swat-gs2#origin/develop'),
     ),
 }
 
 env.server = {
     'path': Path('/home/sergei/swat4server/'),
-    'git': 'git@home:public/swat4#b466151',
+    'git': 'git@home:public/swat4#origin/server',
     'settings': {
         '+[Engine.GameEngine]': (
             'ServerActors=GS2.Listener',
@@ -56,7 +56,7 @@ env.server = {
 }
 
 env.dist = {
-    'version': '1.1.0-beta',
+    'version': '1.1.0',
     'extra': (
         env.paths['here'].child('LICENSE'),
         env.paths['here'].child('README.html'),
