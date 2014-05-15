@@ -1,7 +1,7 @@
 swat-gs2
 %%%%%%%%
 
-:Version:           1.1.0-beta
+:Version:           1.1.0
 :Home page:         https://github.com/sergeii/swat-gs2
 :Author:            Sergei Khoroshilov <kh.sergei@gmail.com>
 :License:           `BSD 3-Clause <http://opensource.org/licenses/BSD-3-Clause>`_
